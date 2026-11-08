@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Xe tự hành - Radar</title>
+<style>
+:root{
+  --bg:#0d1b21; --panel:#14262e; --panel2:#1b323c; --line:#29434d;
+  --text:#e8f0f2; --mute:#8aa3ac; --accent:#6fe0c5; --warn:#ffb454; --danger:#ff6a5c;
+  --font:"Bahnschrift","Segoe UI Variable Text","Segoe UI",Roboto,"Helvetica Neue",system-ui,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font:16px/1.45 var(--font)}
+body{padding:max(12px,env(safe-area-inset-top)) 14px max(16px,env(safe-area-inset-bottom));
+  -webkit-tap-highlight-color:transparent}
+.app{max-width:980px;margin:0 auto;display:grid;gap:14px}
+@media(min-width:860px){.app{grid-template-columns:1.35fr 1fr;align-items:start}.top{grid-column:1/-1}}
+.top{display:flex;justify-content:space-between;align-items:center}
+h1{font-size:20px;margin:0;font-weight:650}
+.conn{display:flex;gap:8px;align-items:center;color:var(--mute);font-size:14px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--danger)}
+.conn.ok .dot{background:var(--accent)}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:14px}
+#radar{width:100%;display:block}
+.stats{display:grid;grid-template-columns:1fr 1fr 1.5fr;gap:10px;margin-top:10px}
+.stat{background:var(--panel2);border-radius:12px;padding:10px 12px;min-width:0}
+.stat small{display:block;color:var(--mute);font-size:13px}
+.stat b{display:block;font-size:24px;font-weight:650;font-variant-numeric:tabular-nums;line-height:1.25}
+.stat b.txt{font-size:16px;line-height:1.5}
+.stat.alert b{color:var(--danger)}
+.seg{display:grid;grid-template-columns:1fr 1fr;background:var(--panel2);border-radius:14px;padding:4px;gap:4px}
+.seg button{border:0;border-radius:11px;padding:12px 8px;font:inherit;font-weight:600;color:var(--mute);background:transparent;cursor:pointer}
+.seg button[aria-pressed=true]{background:var(--accent);color:#06251e}
+.row{display:flex;justify-content:space-between;align-items:baseline;margin:18px 0 6px}
+.row output{font-variant-numeric:tabular-nums;font-weight:650}
+input[type=range]{width:100%;accent-color:var(--accent);height:32px}
+.bar{height:10px;background:var(--panel2);border-radius:6px;overflow:hidden;margin-top:4px}
+.bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
+.pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:18px auto 6px;max-width:320px}
+.pad button{aspect-ratio:1.15;border:1px solid var(--line);border-radius:16px;background:var(--panel2);color:var(--text);
+  font:inherit;font-size:26px;cursor:pointer;touch-action:none;user-select:none;-webkit-user-select:none}
+.pad button.on,.pad button:active{background:#244551;border-color:var(--accent)}
+.pad button.stop{font-size:15px;font-weight:650;color:#fff;background:#6b2a26;border-color:#a8453d}
+.pad.off button{opacity:.35;pointer-events:none}
+.pad.off button.stop{opacity:1;pointer-events:auto}
+.scan{display:grid;grid-template-columns:1fr 1fr;gap:10px;max-width:320px;margin:10px auto 0}
+.scan button{padding:12px 8px;border:1px solid var(--line);border-radius:14px;background:var(--panel2);color:var(--text);font:inherit;font-weight:600;cursor:pointer}
+.scan button:disabled{opacity:.4;cursor:not-allowed}
+.scan button:not(:disabled):active{background:#244551;border-color:var(--accent)}
+.alert-box{background:#3a1d1a;border:1px solid var(--danger);color:#ffd9d4;border-radius:12px;padding:10px 12px;margin-top:10px;font-weight:600}
+.chk{display:flex;gap:10px;align-items:center;color:var(--mute);font-size:14px;margin-top:14px}
+.chk input{width:20px;height:20px;accent-color:var(--accent)}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main class="app">
+  <div class="top">
+    <h1>Xe tự hành</h1>
+    <div class="conn" id="conn"><span class="dot"></span><span id="connTxt">Đang kết nối</span></div>
+  </div>
+
+  <section class="panel">
+    <canvas id="radar" aria-label="Radar hiển thị vật cản phía trước xe"></canvas>
+    <div class="stats">
+      <div class="stat" id="stFront"><small>Phía trước</small><b id="vFront">-</b></div>
+      <div class="stat"><small>Tốc độ xe</small><b id="vCur">0%</b></div>
+      <div class="stat"><small>Trạng thái</small><b class="txt" id="vPhase">-</b></div>
+    </div>
+    <div class="alert-box" id="alertBox" role="alert" hidden></div>
+  </section>
+
+  <section class="panel">
+    <div class="seg" role="group" aria-label="Chế độ điều khiển">
+      <button id="bMan" aria-pressed="true">Thủ công</button>
+      <button id="bAuto" aria-pressed="false">Tự động</button>
+    </div>
+
+    <div class="row"><label for="spd" id="spdLbl">Tốc độ</label><output id="spdVal">60%</output></div>
+    <input id="spd" type="range" min="5" max="100" step="5" value="60">
+
+    <div id="autoInfo" hidden>
+      <div class="row" style="margin-top:14px"><span>Tốc độ hiện tại (tự điều chỉnh)</span><output id="curVal">0%</output></div>
+      <div class="bar"><i id="curBar"></i></div>
+      <label class="chk"><input type="checkbox" id="slow" checked>Tự giảm tốc khi tới gần vật cản (tắt = chạy đều tốc độ đã đặt)</label>
+    </div>
+
+    <div class="pad" id="pad">
+      <span></span>
+      <button data-d="F" aria-label="Tiến">↑</button>
+      <span></span>
+      <button data-d="L" aria-label="Rẽ trái">←</button>
+      <button class="stop" id="bStop" aria-label="Dừng xe">DỪNG</button>
+      <button data-d="R" aria-label="Rẽ phải">→</button>
+      <span></span>
+      <button data-d="B" aria-label="Lùi">↓</button>
+      <span></span>
+    </div>
+
+    <div class="scan" id="scanRow">
+      <button id="bScanL" aria-label="Quét trái 80 độ">⟲ Quét trái</button>
+      <button id="bScanR" aria-label="Quét phải 80 độ">Quét phải ⟳</button>
+    </div>
+
+    <label class="chk"><input type="checkbox" id="guard" checked>Tự phanh khi vật cản gần phía trước (chế độ thủ công)</label>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const PHASE = {MAN:'Điều khiển tay', BLOCK:'Bị chặn phía trước', WAIT:'Đang quét phía trước',
+  DRIVE:'Đang tiến', SCAN:'Quét tìm hướng', LOOK:'Quay cảm biến', TURN:'Đang quay xe', BACK:'Đang lùi'};
+const MSG = {NOPATH:'Không tìm thấy hướng đi: xe đã quay đủ một vòng mà phía nào cũng quá gần vật cản. Đã dừng và chuyển sang thủ công.'};
+let st = {mode:'MAN', speed:60, smax:100, cur:0, phase:'MAN', angle:90, front:-1, maxr:200, step:15, radar:[], guard:true, autoslow:true, scanning:false, msg:''};
+let live = false, dispAngle = 90;
+const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ---------- gửi lệnh ---------- */
+let ws = null, wsOk = false, lastMsg = 0;
+function send(c){                                  // ưu tiên WebSocket (không phải bắt tay HTTP mỗi lần bấm)
+  if (wsOk) { try { ws.send(c); return; } catch (e) {} }
+  fetch('/api/cmd?c=' + encodeURIComponent(c), {cache:'no-store'}).catch(()=>{});
+}
+const COMBO = {F:'F', B:'B', L:'L', R:'R', FL:'G', FR:'I', BL:'H', BR:'J'};
+const down = new Set();                 // các nút hướng đang giữ
+let current = null, timer = null;
+function resolve(){
+  const f = down.has('F'), b = down.has('B'), l = down.has('L'), r = down.has('R');
+  const v = f && !b ? 'F' : b && !f ? 'B' : '';   // tiến + lùi triệt tiêu nhau
+  const h = l && !r ? 'L' : r && !l ? 'R' : '';   // trái + phải triệt tiêu nhau
+  return COMBO[v + h] || null;
+}
+function sync(){
+  document.querySelectorAll('.pad button[data-d]').forEach(b => b.classList.toggle('on', down.has(b.dataset.d)));
+  const c = resolve();
+  if (c === current) return;
+  current = c; clearInterval(timer);
+  if (c) { send(c); timer = setInterval(() => send(c), 100); }
+  else send('S');
+}
+function press(d){ if (st.mode !== 'MAN') return; down.add(d); sync(); }
+function up(d){ if (down.delete(d)) sync(); }
+function release(){ if (down.size) { down.clear(); sync(); } }
+document.querySelectorAll('.pad button[data-d]').forEach(b => {
+  const d = b.dataset.d;
+  b.addEventListener('pointerdown', e => { e.preventDefault(); b.setPointerCapture(e.pointerId); press(d); });
+  b.addEventListener('pointerup', () => up(d));
+  b.addEventListener('pointercancel', () => up(d));
+  b.addEventListener('contextmenu', e => e.preventDefault());
+});
+$('bStop').addEventListener('click', () => { release(); send('X'); st.mode = 'MAN'; render(); });
+$('bMan').addEventListener('click', () => { send('M'); st.mode = 'MAN'; render(); });
+$('bAuto').addEventListener('click', () => { release(); send('A'); st.mode = 'AUTO'; render(); });
+function doScan(side){ if (st.mode !== 'MAN' || st.scanning) return; st.scanning = true; send('Z' + side); render(); }
+$('bScanL').addEventListener('click', () => doScan('L'));
+$('bScanR').addEventListener('click', () => doScan('R'));
+$('guard').addEventListener('change', e => send(e.target.checked ? 'C1' : 'C0'));
+$('slow').addEventListener('change', e => { st.autoslow = e.target.checked; send(e.target.checked ? 'K1' : 'K0'); });
+
+let lastV = 0;
+$('spd').addEventListener('input', e => {
+  $('spdVal').textContent = e.target.value + '%';
+  const now = Date.now();
+  if (now - lastV > 80) { lastV = now; send('V' + e.target.value); }
+});
+$('spd').addEventListener('change', e => send('V' + e.target.value));
+
+const KEYS = {ArrowUp:'F', w:'F', ArrowDown:'B', s:'B', ArrowLeft:'L', a:'L', ArrowRight:'R', d:'R'};
+addEventListener('keydown', e => {
+  if (e.repeat || e.target.id === 'spd') return;
+  if (e.key === ' ') { e.preventDefault(); $('bStop').click(); return; }
+  const d = KEYS[e.key.length === 1 ? e.key.toLowerCase() : e.key];
+  if (d) { e.preventDefault(); press(d); }
+});
+addEventListener('keyup', e => { const d = KEYS[e.key.length === 1 ? e.key.toLowerCase() : e.key]; if (d) up(d); });
+addEventListener('blur', release);
+
+/* ---------- cập nhật giao diện ---------- */
+function render(){
+  const auto = st.mode === 'AUTO';
+  $('conn').classList.toggle('ok', live);
+  $('connTxt').textContent = live ? 'Đã kết nối' : 'Mất kết nối';
+  $('bMan').setAttribute('aria-pressed', !auto);
+  $('bAuto').setAttribute('aria-pressed', auto);
+  $('spdLbl').textContent = auto ? 'Tốc độ tự động (tối đa ' + (st.smax || 100) + '%)' : 'Tốc độ';
+  $('spd').max = st.smax || 100;                   // chế độ tự động bị giới hạn tốc độ
+  if (document.activeElement !== $('spd')) { $('spd').value = st.speed; $('spdVal').textContent = st.speed + '%'; }
+  $('autoInfo').hidden = !auto;
+  $('curVal').textContent = st.cur + '%';
+  $('curBar').style.width = Math.min(100, Math.round(st.cur * 100 / (st.smax || 100))) + '%';   // thanh đầy khi đạt tốc độ tối đa của chế độ
+  $('pad').classList.toggle('off', auto);
+  $('scanRow').hidden = auto;                                  // quét tay chỉ có ở chế độ thủ công
+  $('bScanL').disabled = $('bScanR').disabled = !!st.scanning; // quét xong, servo về 0 độ mới bấm tiếp được
+  $('alertBox').hidden = !st.msg;
+  $('alertBox').textContent = MSG[st.msg] || st.msg || '';
+  $('guard').checked = st.guard;
+  $('slow').checked = st.autoslow !== false;
+  $('vFront').textContent = st.front >= 0 ? st.front + ' cm' : 'Thông thoáng';
+  $('stFront').classList.toggle('alert', st.front >= 0 && st.front <= 30);
+  $('vCur').textContent = st.cur + '%';
+  $('vPhase').textContent = PHASE[st.phase] || st.phase;
+}
+
+let busy = false, fails = 0;
+async function poll(){
+  if (busy) return; busy = true;
+  try {
+    const r = await fetch('/api/status', {cache:'no-store'});
+    st = await r.json(); fails = 0; live = true; render();
+  } catch (e) { if (++fails > 3) { live = false; render(); } }
+  finally { busy = false; }
+}
+function connectWS(){
+  try { ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws'); }
+  catch (e) { setTimeout(connectWS, 1000); return; }
+  ws.onopen = () => { wsOk = true; lastMsg = Date.now(); live = true; render(); };
+  ws.onmessage = e => { try { st = JSON.parse(e.data); live = true; fails = 0; lastMsg = Date.now(); render(); } catch (_) {} };
+  ws.onclose = () => { wsOk = false; setTimeout(connectWS, 500); };
+  ws.onerror = () => { try { ws.close(); } catch (_) {} };
+}
+connectWS();
+setInterval(() => { if (!wsOk) poll(); }, 250);     // dự phòng khi WebSocket chưa nối được
+setInterval(() => { if (wsOk) { ws.send('.'); if (Date.now() - lastMsg > 2500 && live) { live = false; render(); } } }, 2000);
+poll();
+
+/* ---------- radar ---------- */
+const cv = $('radar'), ctx = cv.getContext('2d');
+const FONT = '12px "Bahnschrift","Segoe UI",Roboto,system-ui,sans-serif';
+function fit(){
+  const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = Math.round(w * 0.58);
+  cv.style.height = h + 'px'; cv.width = w * dpr; cv.height = h * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+addEventListener('resize', fit); fit();
+
+const rad = a => -a * Math.PI / 180;               // 0° bên phải, 90° phía trước, 180° bên trái
+function colorFor(d){ return d < 30 ? '255,106,92' : d < 80 ? '255,180,84' : '111,224,197'; }
+
+function draw(){
+  const W = cv.clientWidth, H = cv.clientHeight;
+  ctx.clearRect(0, 0, W, H);
+  const cx = W / 2, cy = H - 16, R = Math.min(W / 2 - 12, H - 30);
+  ctx.lineWidth = 1; ctx.font = FONT; ctx.textAlign = 'left';
+
+  ctx.strokeStyle = '#29434d'; ctx.fillStyle = '#8aa3ac';
+  for (let i = 1; i <= 4; i++) {
+    const r = R * i / 4;
+    ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, 2 * Math.PI); ctx.stroke();
+    ctx.fillText(Math.round(st.maxr * i / 4) + ' cm', cx + r - 46, cy - 5);
+  }
+  for (let a = 0; a <= 180; a += 30) {
+    ctx.beginPath(); ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + R * Math.cos(rad(a)), cy + R * Math.sin(rad(a))); ctx.stroke();
+  }
+  ctx.beginPath(); ctx.moveTo(cx - R - 6, cy); ctx.lineTo(cx + R + 6, cy); ctx.stroke();
+
+  const half = (st.step || 15) / 2;
+  ctx.lineCap = 'butt';
+  for (const [a, d, age] of st.radar) {
+    const fade = Math.max(0.15, 1 - age / 60);
+    if (d < 0) {                                    // không có vật trong tầm: vạch mờ ở vành ngoài
+      ctx.strokeStyle = 'rgba(111,224,197,' + (0.25 * fade) + ')'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(cx, cy, R, rad(a + half), rad(a - half)); ctx.stroke();
+      continue;
+    }
+    const r = R * Math.min(d, st.maxr) / st.maxr;
+    ctx.strokeStyle = 'rgba(' + colorFor(d) + ',' + fade + ')'; ctx.lineWidth = 12;
+    ctx.beginPath(); ctx.arc(cx, cy, r, rad(a + half), rad(a - half)); ctx.stroke();
+  }
+
+  dispAngle = calm ? st.angle : dispAngle + (st.angle - dispAngle) * 0.3;
+  const ex = cx + R * Math.cos(rad(dispAngle)), ey = cy + R * Math.sin(rad(dispAngle));
+  const g = ctx.createLinearGradient(cx, cy, ex, ey);
+  g.addColorStop(0, 'rgba(111,224,197,0)'); g.addColorStop(1, 'rgba(111,224,197,.95)');
+  ctx.strokeStyle = g; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(ex, ey); ctx.stroke();
+
+  ctx.fillStyle = '#e8f0f2';                        // biểu tượng xe
+  ctx.beginPath(); ctx.moveTo(cx, cy - 12); ctx.lineTo(cx - 8, cy + 6); ctx.lineTo(cx + 8, cy + 6); ctx.closePath(); ctx.fill();
+
+  if (!live) {
+    ctx.fillStyle = '#8aa3ac'; ctx.textAlign = 'center'; ctx.font = '14px ' + FONT.split('px ')[1];
+    ctx.fillText('Chưa nhận được dữ liệu radar. Kiểm tra kết nối WiFi với xe.', cx, cy - R / 2);
+  }
+  requestAnimationFrame(draw);
+}
+draw(); render();
+</script>
+</body>
+</html>
